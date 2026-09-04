@@ -1,9 +1,14 @@
 # ============================================================
-# AI EDGE ART GENERATOR V3.4
+# AI EDGE ART GENERATOR V3.5
 # app.py
 # ============================================================
 #
-# Dynamic color palette edition.
+# Fixes:
+#
+# - custom palette values persist when adding/removing slots
+# - palette state is stored as one persistent list
+# - adding a slot does NOT reset existing colors
+# - removing a slot does NOT reset existing colors
 #
 # ============================================================
 
@@ -39,11 +44,9 @@ st.set_page_config(
     layout="centered",
 )
 
-
 st.title(
     "AI Edge Art Generator"
 )
-
 
 st.write(
     "Create an AI Edge pattern from a stable baseline, "
@@ -58,11 +61,8 @@ st.write(
 
 if "baseline_seed" not in st.session_state:
 
-    st.session_state[
-        "baseline_seed"
-    ] = (
-        random.SystemRandom()
-        .randint(
+    st.session_state["baseline_seed"] = (
+        random.SystemRandom().randint(
             0,
             999_999_999,
         )
@@ -71,54 +71,36 @@ if "baseline_seed" not in st.session_state:
 
 if "generated_result" not in st.session_state:
 
-    st.session_state[
-        "generated_result"
-    ] = None
-
-
-if "color_count" not in st.session_state:
-
-    st.session_state[
-        "color_count"
-    ] = len(
-        DEFAULT_PALETTE
-    )
+    st.session_state["generated_result"] = None
 
 
 # ============================================================
-# INITIALIZE DEFAULT COLOR WIDGETS
+# PERSISTENT PALETTE STATE
+# ============================================================
+#
+# This is the important fix.
+#
+# Instead of rebuilding defaults for each widget on every
+# rerun, we keep one palette list in session state.
+#
 # ============================================================
 
-for index, slot in enumerate(
-    DEFAULT_PALETTE,
-    start=1,
-):
+if "palette_slots" not in st.session_state:
 
-    hex_key = (
-        f"color_hex_{index}"
+    st.session_state["palette_slots"] = [
+        {
+            "hex": slot["hex"],
+            "weight": slot["weight"],
+        }
+        for slot in DEFAULT_PALETTE
+    ]
+
+
+if "background_hex" not in st.session_state:
+
+    st.session_state["background_hex"] = (
+        DEFAULT_BACKGROUND
     )
-
-    weight_key = (
-        f"color_weight_{index}"
-    )
-
-
-    if hex_key not in st.session_state:
-
-        st.session_state[
-            hex_key
-        ] = slot[
-            "hex"
-        ]
-
-
-    if weight_key not in st.session_state:
-
-        st.session_state[
-            weight_key
-        ] = slot[
-            "weight"
-        ]
 
 
 # ============================================================
@@ -128,7 +110,6 @@ for index, slot in enumerate(
 st.subheader(
     "Pattern Baseline"
 )
-
 
 st.caption(
     "Keep the same seed to preserve the same overall footprint "
@@ -164,7 +145,6 @@ with seed_button_col:
     st.write("")
     st.write("")
 
-
     if st.button(
         "New Seed",
         use_container_width=True,
@@ -173,8 +153,7 @@ with seed_button_col:
         st.session_state[
             "baseline_seed"
         ] = (
-            random.SystemRandom()
-            .randint(
+            random.SystemRandom().randint(
                 0,
                 999_999_999,
             )
@@ -202,7 +181,6 @@ st.subheader(
     "Dimensions"
 )
 
-
 st.caption(
     "Patterns are constructed on a 25 × 25 px grid. "
     "Artwork may bleed beyond the requested dimensions "
@@ -210,10 +188,8 @@ st.caption(
 )
 
 
-dimension_col_1, dimension_col_2 = (
-    st.columns(
-        2
-    )
+dimension_col_1, dimension_col_2 = st.columns(
+    2
 )
 
 
@@ -247,7 +223,6 @@ st.subheader(
     "Negative Space"
 )
 
-
 negative_space = st.slider(
     "Pattern openness",
     min_value=0,
@@ -270,7 +245,6 @@ st.subheader(
     "Color Balance"
 )
 
-
 st.caption(
     "Edit a hex value to change that color. "
     "Use its slider to control how dominant it is. "
@@ -279,7 +253,7 @@ st.caption(
 
 
 # ============================================================
-# ADD / REMOVE COLOR BUTTONS
+# ADD / REMOVE COLOR
 # ============================================================
 
 add_col, remove_col, count_col = st.columns(
@@ -295,9 +269,11 @@ add_col, remove_col, count_col = st.columns(
 with add_col:
 
     add_disabled = (
-        st.session_state[
-            "color_count"
-        ]
+        len(
+            st.session_state[
+                "palette_slots"
+            ]
+        )
         >=
         MAX_COLORS
     )
@@ -309,34 +285,14 @@ with add_col:
         use_container_width=True,
     ):
 
-        new_index = (
-            st.session_state[
-                "color_count"
-            ]
-            +
-            1
+        st.session_state[
+            "palette_slots"
+        ].append(
+            {
+                "hex": "#FFFFFF",
+                "weight": 0,
+            }
         )
-
-
-        st.session_state[
-            "color_count"
-        ] = new_index
-
-
-        # New colors begin inactive.
-        #
-        # This means adding a slot does not change the art
-        # until the AD intentionally edits / activates it.
-
-        st.session_state[
-            f"color_hex_{new_index}"
-        ] = "#FFFFFF"
-
-
-        st.session_state[
-            f"color_weight_{new_index}"
-        ] = 0
-
 
         st.rerun()
 
@@ -344,9 +300,11 @@ with add_col:
 with remove_col:
 
     remove_disabled = (
-        st.session_state[
-            "color_count"
-        ]
+        len(
+            st.session_state[
+                "palette_slots"
+            ]
+        )
         <=
         MIN_COLORS
     )
@@ -358,29 +316,9 @@ with remove_col:
         use_container_width=True,
     ):
 
-        old_index = (
-            st.session_state[
-                "color_count"
-            ]
-        )
-
-
-        st.session_state.pop(
-            f"color_hex_{old_index}",
-            None,
-        )
-
-
-        st.session_state.pop(
-            f"color_weight_{old_index}",
-            None,
-        )
-
-
         st.session_state[
-            "color_count"
-        ] -= 1
-
+            "palette_slots"
+        ].pop()
 
         st.rerun()
 
@@ -388,12 +326,12 @@ with remove_col:
 with count_col:
 
     st.caption(
-        f"{st.session_state['color_count']} color slots"
+        f"{len(st.session_state['palette_slots'])} color slots"
     )
 
 
 # ============================================================
-# COLUMN HEADERS
+# HEADERS
 # ============================================================
 
 header_number, header_hex, header_swatch, header_slider = (
@@ -433,43 +371,26 @@ with header_slider:
 # COLOR ROWS
 # ============================================================
 
-palette_slots = []
-
 invalid_colors = []
 
 
 for index in range(
-    1,
-    st.session_state[
-        "color_count"
-    ]
-    +
-    1
+    len(
+        st.session_state[
+            "palette_slots"
+        ]
+    )
 ):
 
-    # Make sure dynamically created slots exist.
-
-    hex_key = (
-        f"color_hex_{index}"
+    slot_number = (
+        index + 1
     )
 
-    weight_key = (
-        f"color_weight_{index}"
-    )
-
-
-    if hex_key not in st.session_state:
-
-        st.session_state[
-            hex_key
-        ] = "#FFFFFF"
-
-
-    if weight_key not in st.session_state:
-
-        st.session_state[
-            weight_key
-        ] = 0
+    slot = st.session_state[
+        "palette_slots"
+    ][
+        index
+    ]
 
 
     (
@@ -495,26 +416,55 @@ for index in range(
     with number_col:
 
         st.markdown(
-            f"**{index}**"
+            f"**{slot_number}**"
         )
 
 
     # --------------------------------------------------------
-    # HEX
+    # HEX FIELD
     # --------------------------------------------------------
+
+    hex_widget_key = (
+        f"palette_hex_{slot_number}"
+    )
+
+
+    # Only initialize the widget key if it doesn't exist.
+    #
+    # Existing custom values are preserved.
+
+    if hex_widget_key not in st.session_state:
+
+        st.session_state[
+            hex_widget_key
+        ] = slot[
+            "hex"
+        ]
+
 
     with hex_col:
 
         entered_hex = st.text_input(
-            f"Color {index} hex",
-            key=hex_key,
+            f"Color {slot_number} hex",
+            key=hex_widget_key,
             label_visibility="collapsed",
         )
 
 
-    normalized = normalize_hex(
+    normalized_hex = normalize_hex(
         entered_hex
     )
+
+
+    # Keep persistent palette model synchronized.
+
+    st.session_state[
+        "palette_slots"
+    ][
+        index
+    ][
+        "hex"
+    ] = normalized_hex
 
 
     # --------------------------------------------------------
@@ -522,14 +472,14 @@ for index in range(
     # --------------------------------------------------------
 
     is_valid = valid_hex(
-        normalized
+        normalized_hex
     )
 
 
     with swatch_col:
 
         preview_color = (
-            normalized
+            normalized_hex
             if is_valid
             else "#FFFFFF"
         )
@@ -561,34 +511,79 @@ for index in range(
     # BALANCE
     # --------------------------------------------------------
 
+    weight_widget_key = (
+        f"palette_weight_{slot_number}"
+    )
+
+
+    if weight_widget_key not in st.session_state:
+
+        st.session_state[
+            weight_widget_key
+        ] = int(
+            slot[
+                "weight"
+            ]
+        )
+
+
     with slider_col:
 
         weight = st.slider(
-            f"Color {index} balance",
+            f"Color {slot_number} balance",
             min_value=0,
             max_value=40,
             step=1,
-            key=weight_key,
+            key=weight_widget_key,
             label_visibility="collapsed",
         )
 
 
-    palette_slots.append(
-        {
-            "hex":
-                normalized,
-
-            "weight":
-                weight,
-        }
-    )
+    st.session_state[
+        "palette_slots"
+    ][
+        index
+    ][
+        "weight"
+    ] = weight
 
 
     if not is_valid:
 
         invalid_colors.append(
-            index
+            slot_number
         )
+
+
+# ============================================================
+# CLEAN UP ORPHANED WIDGET KEYS
+# ============================================================
+#
+# If a color is removed, remove its old widget state too.
+#
+# ============================================================
+
+active_count = len(
+    st.session_state[
+        "palette_slots"
+    ]
+)
+
+
+for possible_index in range(
+    active_count + 1,
+    MAX_COLORS + 1,
+):
+
+    st.session_state.pop(
+        f"palette_hex_{possible_index}",
+        None,
+    )
+
+    st.session_state.pop(
+        f"palette_weight_{possible_index}",
+        None,
+    )
 
 
 # ============================================================
@@ -629,7 +624,6 @@ with background_hex_col:
 
     background = st.text_input(
         "Background hex",
-        value=DEFAULT_BACKGROUND,
         key="background_hex",
         label_visibility="collapsed",
     )
@@ -638,6 +632,11 @@ with background_hex_col:
 background = normalize_hex(
     background
 )
+
+
+st.session_state[
+    "background_hex"
+] = background
 
 
 background_valid = valid_hex(
@@ -683,7 +682,6 @@ with background_swatch_col:
 st.subheader(
     "Shape Dominance"
 )
-
 
 st.caption(
     "Increase a motif to make it more prominent. "
@@ -767,7 +765,6 @@ st.subheader(
     "Splice"
 )
 
-
 splice_enabled = st.checkbox(
     "Enable diagonal splice",
     value=True,
@@ -817,7 +814,9 @@ if st.button(
             "weight"
         ]
         for slot
-        in palette_slots
+        in st.session_state[
+            "palette_slots"
+        ]
     ) <= 0:
 
         st.error(
@@ -833,10 +832,6 @@ if st.button(
         ):
 
             try:
-
-                # ====================================================
-                # ONE BLUEPRINT
-                # ====================================================
 
                 blueprint = (
                     create_custom_ai_edge_blueprint(
@@ -859,7 +854,9 @@ if st.button(
                         ),
 
                         palette_slots=(
-                            palette_slots
+                            st.session_state[
+                                "palette_slots"
+                            ]
                         ),
 
                         background=(
@@ -876,10 +873,6 @@ if st.button(
                     )
                 )
 
-
-                # ====================================================
-                # SAME BLUEPRINT -> PNG + VECTOR
-                # ====================================================
 
                 image = render_custom_png(
                     blueprint
@@ -949,10 +942,6 @@ if result is not None:
     st.divider()
 
 
-    # ========================================================
-    # PREVIEW
-    # ========================================================
-
     st.image(
         image,
         caption=(
@@ -962,10 +951,6 @@ if result is not None:
         use_container_width=True,
     )
 
-
-    # ========================================================
-    # PNG
-    # ========================================================
 
     png_buffer = io.BytesIO()
 
@@ -984,10 +969,6 @@ if result is not None:
     )
 
 
-    # ========================================================
-    # DOWNLOADS
-    # ========================================================
-
     download_col_1, download_col_2 = (
         st.columns(
             2
@@ -999,17 +980,13 @@ if result is not None:
 
         st.download_button(
             label="Download PNG",
-
             data=png_buffer.getvalue(),
-
             file_name=(
                 filename_base
                 +
                 ".png"
             ),
-
             mime="image/png",
-
             use_container_width=True,
         )
 
@@ -1018,17 +995,13 @@ if result is not None:
 
         st.download_button(
             label="Download Production Vector",
-
             data=production_vector,
-
             file_name=(
                 filename_base
                 +
                 "_production.svg"
             ),
-
             mime="image/svg+xml",
-
             use_container_width=True,
         )
 
