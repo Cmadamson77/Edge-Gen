@@ -1,14 +1,14 @@
 # ============================================================
-# AI EDGE ART GENERATOR V3.5
+# AI EDGE ART GENERATOR V3.6
 # app.py
 # ============================================================
 #
 # Fixes:
 #
-# - custom palette values persist when adding/removing slots
-# - palette state is stored as one persistent list
-# - adding a slot does NOT reset existing colors
-# - removing a slot does NOT reset existing colors
+# - dynamic palette
+# - custom colors persist when adding/removing slots
+# - background hex persists correctly
+# - fixes StreamlitWidgetAlreadyInstantiatedError
 #
 # ============================================================
 
@@ -75,14 +75,7 @@ if "generated_result" not in st.session_state:
 
 
 # ============================================================
-# PERSISTENT PALETTE STATE
-# ============================================================
-#
-# This is the important fix.
-#
-# Instead of rebuilding defaults for each widget on every
-# rerun, we keep one palette list in session state.
-#
+# PERSISTENT PALETTE
 # ============================================================
 
 if "palette_slots" not in st.session_state:
@@ -96,6 +89,10 @@ if "palette_slots" not in st.session_state:
     ]
 
 
+# ============================================================
+# BACKGROUND STATE
+# ============================================================
+
 if "background_hex" not in st.session_state:
 
     st.session_state["background_hex"] = (
@@ -104,7 +101,7 @@ if "background_hex" not in st.session_state:
 
 
 # ============================================================
-# BASELINE
+# PATTERN BASELINE
 # ============================================================
 
 st.subheader(
@@ -132,9 +129,7 @@ with seed_col:
         min_value=0,
         max_value=999_999_999,
         value=int(
-            st.session_state[
-                "baseline_seed"
-            ]
+            st.session_state["baseline_seed"]
         ),
         step=1,
     )
@@ -150,25 +145,19 @@ with seed_button_col:
         use_container_width=True,
     ):
 
-        st.session_state[
-            "baseline_seed"
-        ] = (
+        st.session_state["baseline_seed"] = (
             random.SystemRandom().randint(
                 0,
                 999_999_999,
             )
         )
 
-        st.session_state[
-            "generated_result"
-        ] = None
+        st.session_state["generated_result"] = None
 
         st.rerun()
 
 
-st.session_state[
-    "baseline_seed"
-] = int(
+st.session_state["baseline_seed"] = int(
     baseline_seed
 )
 
@@ -270,14 +259,11 @@ with add_col:
 
     add_disabled = (
         len(
-            st.session_state[
-                "palette_slots"
-            ]
+            st.session_state["palette_slots"]
         )
         >=
         MAX_COLORS
     )
-
 
     if st.button(
         "+ Add Color",
@@ -285,9 +271,7 @@ with add_col:
         use_container_width=True,
     ):
 
-        st.session_state[
-            "palette_slots"
-        ].append(
+        st.session_state["palette_slots"].append(
             {
                 "hex": "#FFFFFF",
                 "weight": 0,
@@ -301,14 +285,11 @@ with remove_col:
 
     remove_disabled = (
         len(
-            st.session_state[
-                "palette_slots"
-            ]
+            st.session_state["palette_slots"]
         )
         <=
         MIN_COLORS
     )
-
 
     if st.button(
         "− Remove Color",
@@ -316,9 +297,21 @@ with remove_col:
         use_container_width=True,
     ):
 
-        st.session_state[
-            "palette_slots"
-        ].pop()
+        old_count = len(
+            st.session_state["palette_slots"]
+        )
+
+        st.session_state["palette_slots"].pop()
+
+        st.session_state.pop(
+            f"palette_hex_{old_count}",
+            None,
+        )
+
+        st.session_state.pop(
+            f"palette_weight_{old_count}",
+            None,
+        )
 
         st.rerun()
 
@@ -331,7 +324,7 @@ with count_col:
 
 
 # ============================================================
-# HEADERS
+# COLUMN HEADERS
 # ============================================================
 
 header_number, header_hex, header_swatch, header_slider = (
@@ -376,9 +369,7 @@ invalid_colors = []
 
 for index in range(
     len(
-        st.session_state[
-            "palette_slots"
-        ]
+        st.session_state["palette_slots"]
     )
 ):
 
@@ -429,10 +420,6 @@ for index in range(
     )
 
 
-    # Only initialize the widget key if it doesn't exist.
-    #
-    # Existing custom values are preserved.
-
     if hex_widget_key not in st.session_state:
 
         st.session_state[
@@ -456,7 +443,10 @@ for index in range(
     )
 
 
-    # Keep persistent palette model synchronized.
+    # Keep the palette model synchronized.
+    #
+    # This updates palette_slots, NOT the widget's own key,
+    # so Streamlit is happy.
 
     st.session_state[
         "palette_slots"
@@ -556,37 +546,6 @@ for index in range(
 
 
 # ============================================================
-# CLEAN UP ORPHANED WIDGET KEYS
-# ============================================================
-#
-# If a color is removed, remove its old widget state too.
-#
-# ============================================================
-
-active_count = len(
-    st.session_state[
-        "palette_slots"
-    ]
-)
-
-
-for possible_index in range(
-    active_count + 1,
-    MAX_COLORS + 1,
-):
-
-    st.session_state.pop(
-        f"palette_hex_{possible_index}",
-        None,
-    )
-
-    st.session_state.pop(
-        f"palette_weight_{possible_index}",
-        None,
-    )
-
-
-# ============================================================
 # BACKGROUND
 # ============================================================
 
@@ -622,21 +581,26 @@ with background_number:
 
 with background_hex_col:
 
-    background = st.text_input(
+    background_input = st.text_input(
         "Background hex",
         key="background_hex",
         label_visibility="collapsed",
     )
 
 
+# IMPORTANT:
+#
+# We normalize into a LOCAL VARIABLE only.
+#
+# We do NOT write:
+#
+# st.session_state["background_hex"] = ...
+#
+# after the widget has been created.
+
 background = normalize_hex(
-    background
+    background_input
 )
-
-
-st.session_state[
-    "background_hex"
-] = background
 
 
 background_valid = valid_hex(
@@ -980,13 +944,17 @@ if result is not None:
 
         st.download_button(
             label="Download PNG",
+
             data=png_buffer.getvalue(),
+
             file_name=(
                 filename_base
                 +
                 ".png"
             ),
+
             mime="image/png",
+
             use_container_width=True,
         )
 
@@ -995,13 +963,17 @@ if result is not None:
 
         st.download_button(
             label="Download Production Vector",
+
             data=production_vector,
+
             file_name=(
                 filename_base
                 +
                 "_production.svg"
             ),
+
             mime="image/svg+xml",
+
             use_container_width=True,
         )
 
