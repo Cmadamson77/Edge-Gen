@@ -1,6 +1,10 @@
 # ============================================================
-# AI EDGE ART GENERATOR V3.3
+# AI EDGE ART GENERATOR V3.4
 # app.py
+# ============================================================
+#
+# Dynamic color palette edition.
+#
 # ============================================================
 
 import io
@@ -9,13 +13,14 @@ import random
 import streamlit as st
 
 from ai_edge_generator import (
-    DEFAULT_COLOR_WEIGHTS,
     DEFAULT_SHAPE_WEIGHTS,
 )
 
 from ai_edge_custom import (
     DEFAULT_BACKGROUND,
-    DEFAULT_CUSTOM_COLORS,
+    DEFAULT_PALETTE,
+    MIN_COLORS,
+    MAX_COLORS,
     create_custom_ai_edge_blueprint,
     normalize_hex,
     render_custom_png,
@@ -25,7 +30,7 @@ from ai_edge_custom import (
 
 
 # ============================================================
-# PAGE SETUP
+# PAGE
 # ============================================================
 
 st.set_page_config(
@@ -34,13 +39,16 @@ st.set_page_config(
     layout="centered",
 )
 
+
 st.title(
     "AI Edge Art Generator"
 )
 
+
 st.write(
     "Create an AI Edge pattern from a stable baseline, "
-    "then art-direct its density, color balance, and shape dominance."
+    "then art-direct its density, palette, color balance, "
+    "and shape dominance."
 )
 
 
@@ -68,13 +76,59 @@ if "generated_result" not in st.session_state:
     ] = None
 
 
+if "color_count" not in st.session_state:
+
+    st.session_state[
+        "color_count"
+    ] = len(
+        DEFAULT_PALETTE
+    )
+
+
 # ============================================================
-# PATTERN BASELINE
+# INITIALIZE DEFAULT COLOR WIDGETS
+# ============================================================
+
+for index, slot in enumerate(
+    DEFAULT_PALETTE,
+    start=1,
+):
+
+    hex_key = (
+        f"color_hex_{index}"
+    )
+
+    weight_key = (
+        f"color_weight_{index}"
+    )
+
+
+    if hex_key not in st.session_state:
+
+        st.session_state[
+            hex_key
+        ] = slot[
+            "hex"
+        ]
+
+
+    if weight_key not in st.session_state:
+
+        st.session_state[
+            weight_key
+        ] = slot[
+            "weight"
+        ]
+
+
+# ============================================================
+# BASELINE
 # ============================================================
 
 st.subheader(
     "Pattern Baseline"
 )
+
 
 st.caption(
     "Keep the same seed to preserve the same overall footprint "
@@ -109,6 +163,7 @@ with seed_button_col:
 
     st.write("")
     st.write("")
+
 
     if st.button(
         "New Seed",
@@ -147,6 +202,7 @@ st.subheader(
     "Dimensions"
 )
 
+
 st.caption(
     "Patterns are constructed on a 25 × 25 px grid. "
     "Artwork may bleed beyond the requested dimensions "
@@ -154,8 +210,10 @@ st.caption(
 )
 
 
-dimension_col_1, dimension_col_2 = st.columns(
-    2
+dimension_col_1, dimension_col_2 = (
+    st.columns(
+        2
+    )
 )
 
 
@@ -189,6 +247,7 @@ st.subheader(
     "Negative Space"
 )
 
+
 negative_space = st.slider(
     "Pattern openness",
     min_value=0,
@@ -211,47 +270,142 @@ st.subheader(
     "Color Balance"
 )
 
+
 st.caption(
-    "Edit any hex value to change the palette. "
-    "Use the slider to control how dominant that color is."
+    "Edit a hex value to change that color. "
+    "Use its slider to control how dominant it is. "
+    "Add additional colors whenever the palette needs more range."
 )
 
 
-color_order = [
-    "Brown",
-    "Pink",
-    "Red",
-    "Yellow",
-    "Blue",
-    "Gray",
-    "Ice Blue",
-]
+# ============================================================
+# ADD / REMOVE COLOR BUTTONS
+# ============================================================
+
+add_col, remove_col, count_col = st.columns(
+    [
+        1.4,
+        1.4,
+        2,
+    ],
+    vertical_alignment="center",
+)
 
 
-custom_colors = {}
+with add_col:
 
-color_weights = {}
+    add_disabled = (
+        st.session_state[
+            "color_count"
+        ]
+        >=
+        MAX_COLORS
+    )
+
+
+    if st.button(
+        "+ Add Color",
+        disabled=add_disabled,
+        use_container_width=True,
+    ):
+
+        new_index = (
+            st.session_state[
+                "color_count"
+            ]
+            +
+            1
+        )
+
+
+        st.session_state[
+            "color_count"
+        ] = new_index
+
+
+        # New colors begin inactive.
+        #
+        # This means adding a slot does not change the art
+        # until the AD intentionally edits / activates it.
+
+        st.session_state[
+            f"color_hex_{new_index}"
+        ] = "#FFFFFF"
+
+
+        st.session_state[
+            f"color_weight_{new_index}"
+        ] = 0
+
+
+        st.rerun()
+
+
+with remove_col:
+
+    remove_disabled = (
+        st.session_state[
+            "color_count"
+        ]
+        <=
+        MIN_COLORS
+    )
+
+
+    if st.button(
+        "− Remove Color",
+        disabled=remove_disabled,
+        use_container_width=True,
+    ):
+
+        old_index = (
+            st.session_state[
+                "color_count"
+            ]
+        )
+
+
+        st.session_state.pop(
+            f"color_hex_{old_index}",
+            None,
+        )
+
+
+        st.session_state.pop(
+            f"color_weight_{old_index}",
+            None,
+        )
+
+
+        st.session_state[
+            "color_count"
+        ] -= 1
+
+
+        st.rerun()
+
+
+with count_col:
+
+    st.caption(
+        f"{st.session_state['color_count']} color slots"
+    )
 
 
 # ============================================================
-# COLUMN LABELS
+# COLUMN HEADERS
 # ============================================================
 
 header_number, header_hex, header_swatch, header_slider = (
     st.columns(
         [
-            0.35,
-            1.6,
-            0.65,
-            4.4,
+            0.4,
+            1.7,
+            0.7,
+            4.5,
         ]
     )
 )
-
-
-with header_number:
-
-    st.caption("")
 
 
 with header_hex:
@@ -279,21 +433,58 @@ with header_slider:
 # COLOR ROWS
 # ============================================================
 
-for index, color_name in enumerate(
-    color_order,
-    start=1,
+palette_slots = []
+
+invalid_colors = []
+
+
+for index in range(
+    1,
+    st.session_state[
+        "color_count"
+    ]
+    +
+    1
 ):
 
-    number_col, hex_col, swatch_col, slider_col = (
-        st.columns(
-            [
-                0.35,
-                1.6,
-                0.65,
-                4.4,
-            ],
-            vertical_alignment="center",
-        )
+    # Make sure dynamically created slots exist.
+
+    hex_key = (
+        f"color_hex_{index}"
+    )
+
+    weight_key = (
+        f"color_weight_{index}"
+    )
+
+
+    if hex_key not in st.session_state:
+
+        st.session_state[
+            hex_key
+        ] = "#FFFFFF"
+
+
+    if weight_key not in st.session_state:
+
+        st.session_state[
+            weight_key
+        ] = 0
+
+
+    (
+        number_col,
+        hex_col,
+        swatch_col,
+        slider_col,
+    ) = st.columns(
+        [
+            0.4,
+            1.7,
+            0.7,
+            4.5,
+        ],
+        vertical_alignment="center",
     )
 
 
@@ -304,31 +495,19 @@ for index, color_name in enumerate(
     with number_col:
 
         st.markdown(
-            f"### {index}"
+            f"**{index}**"
         )
 
 
     # --------------------------------------------------------
-    # HEX INPUT
+    # HEX
     # --------------------------------------------------------
 
     with hex_col:
 
         entered_hex = st.text_input(
-            label=(
-                f"{color_name} hex"
-            ),
-
-            value=(
-                DEFAULT_CUSTOM_COLORS[
-                    color_name
-                ]
-            ),
-
-            key=(
-                f"hex_{color_name}"
-            ),
-
+            f"Color {index} hex",
+            key=hex_key,
             label_visibility="collapsed",
         )
 
@@ -338,30 +517,29 @@ for index, color_name in enumerate(
     )
 
 
-    custom_colors[
-        color_name
-    ] = normalized
-
-
     # --------------------------------------------------------
     # SWATCH
     # --------------------------------------------------------
 
+    is_valid = valid_hex(
+        normalized
+    )
+
+
     with swatch_col:
 
-        if valid_hex(
+        preview_color = (
             normalized
-        ):
+            if is_valid
+            else "#FFFFFF"
+        )
 
-            swatch_color = (
-                normalized
-            )
 
-        else:
-
-            swatch_color = (
-                "#FFFFFF"
-            )
+        preview_border = (
+            "rgba(0,0,0,.16)"
+            if is_valid
+            else "#FF0015"
+        )
 
 
         st.markdown(
@@ -370,8 +548,8 @@ for index, color_name in enumerate(
                 'width:42px;'
                 'height:42px;'
                 'border-radius:3px;'
-                'border:1px solid rgba(0,0,0,.18);'
-                f'background:{swatch_color};'
+                f'border:2px solid {preview_border};'
+                f'background:{preview_color};'
                 'margin:auto;'
                 '"></div>'
             ),
@@ -380,34 +558,36 @@ for index, color_name in enumerate(
 
 
     # --------------------------------------------------------
-    # BALANCE SLIDER
+    # BALANCE
     # --------------------------------------------------------
 
     with slider_col:
 
-        color_weights[
-            color_name
-        ] = st.slider(
-            label=(
-                f"{color_name} balance"
-            ),
-
+        weight = st.slider(
+            f"Color {index} balance",
             min_value=0,
             max_value=40,
-
-            value=int(
-                DEFAULT_COLOR_WEIGHTS[
-                    color_name
-                ]
-            ),
-
             step=1,
-
-            key=(
-                f"weight_{color_name}"
-            ),
-
+            key=weight_key,
             label_visibility="collapsed",
+        )
+
+
+    palette_slots.append(
+        {
+            "hex":
+                normalized,
+
+            "weight":
+                weight,
+        }
+    )
+
+
+    if not is_valid:
+
+        invalid_colors.append(
+            index
         )
 
 
@@ -422,27 +602,30 @@ st.markdown(
 )
 
 
-bg_label_col, bg_hex_col, bg_swatch_col, bg_space_col = (
-    st.columns(
-        [
-            0.35,
-            1.6,
-            0.65,
-            4.4,
-        ],
-        vertical_alignment="center",
-    )
+(
+    background_number,
+    background_hex_col,
+    background_swatch_col,
+    background_empty_col,
+) = st.columns(
+    [
+        0.4,
+        1.7,
+        0.7,
+        4.5,
+    ],
+    vertical_alignment="center",
 )
 
 
-with bg_label_col:
+with background_number:
 
     st.markdown(
-        "### B"
+        "**B**"
     )
 
 
-with bg_hex_col:
+with background_hex_col:
 
     background = st.text_input(
         "Background hex",
@@ -457,21 +640,25 @@ background = normalize_hex(
 )
 
 
-with bg_swatch_col:
+background_valid = valid_hex(
+    background
+)
 
-    if valid_hex(
+
+with background_swatch_col:
+
+    background_preview = (
         background
-    ):
+        if background_valid
+        else "#FFFFFF"
+    )
 
-        background_preview = (
-            background
-        )
 
-    else:
-
-        background_preview = (
-            "#FFFFFF"
-        )
+    background_border = (
+        "rgba(0,0,0,.16)"
+        if background_valid
+        else "#FF0015"
+    )
 
 
     st.markdown(
@@ -480,7 +667,7 @@ with bg_swatch_col:
             'width:42px;'
             'height:42px;'
             'border-radius:3px;'
-            'border:1px solid rgba(0,0,0,.18);'
+            f'border:2px solid {background_border};'
             f'background:{background_preview};'
             'margin:auto;'
             '"></div>'
@@ -496,6 +683,7 @@ with bg_swatch_col:
 st.subheader(
     "Shape Dominance"
 )
+
 
 st.caption(
     "Increase a motif to make it more prominent. "
@@ -579,40 +767,10 @@ st.subheader(
     "Splice"
 )
 
+
 splice_enabled = st.checkbox(
     "Enable diagonal splice",
     value=True,
-)
-
-
-# ============================================================
-# VALIDATION
-# ============================================================
-
-invalid_colors = [
-    (
-        index,
-        name,
-        value,
-    )
-    for index, (
-        name,
-        value,
-    )
-    in enumerate(
-        custom_colors.items(),
-        start=1,
-    )
-    if not valid_hex(
-        value
-    )
-]
-
-
-background_invalid = (
-    not valid_hex(
-        background
-    )
 )
 
 
@@ -632,20 +790,21 @@ if st.button(
     if invalid_colors:
 
         invalid_text = ", ".join(
-            (
-                f"Color {index}"
+            str(
+                index
             )
-            for index, name, value
+            for index
             in invalid_colors
         )
 
+
         st.error(
-            f"Please enter a valid 6-digit hex value for: "
-            f"{invalid_text}."
+            "Please enter a valid 6-digit hex value "
+            f"for color slot(s): {invalid_text}."
         )
 
 
-    elif background_invalid:
+    elif not background_valid:
 
         st.error(
             "Please enter a valid 6-digit hex value "
@@ -654,11 +813,16 @@ if st.button(
 
 
     elif sum(
-        color_weights.values()
+        slot[
+            "weight"
+        ]
+        for slot
+        in palette_slots
     ) <= 0:
 
         st.error(
-            "At least one color must have a balance above zero."
+            "At least one color must have "
+            "a balance above zero."
         )
 
 
@@ -694,16 +858,12 @@ if st.button(
                             negative_space
                         ),
 
-                        colors=(
-                            custom_colors
+                        palette_slots=(
+                            palette_slots
                         ),
 
                         background=(
                             background
-                        ),
-
-                        color_weights=(
-                            color_weights
                         ),
 
                         shape_weights=(
@@ -718,7 +878,7 @@ if st.button(
 
 
                 # ====================================================
-                # BOTH OUTPUTS FROM SAME BLUEPRINT
+                # SAME BLUEPRINT -> PNG + VECTOR
                 # ====================================================
 
                 image = render_custom_png(
@@ -804,7 +964,7 @@ if result is not None:
 
 
     # ========================================================
-    # PNG BUFFER
+    # PNG
     # ========================================================
 
     png_buffer = io.BytesIO()
@@ -828,8 +988,10 @@ if result is not None:
     # DOWNLOADS
     # ========================================================
 
-    download_col_1, download_col_2 = st.columns(
-        2
+    download_col_1, download_col_2 = (
+        st.columns(
+            2
+        )
     )
 
 

@@ -3,12 +3,14 @@
 # ai_edge_custom.py
 # ============================================================
 #
-# Allows the Streamlit app to temporarily supply:
+# Supports:
 #
-# - seven custom artwork colors
-# - a custom background color
+# - dynamic artwork palette
+# - 1–20 artwork colors
+# - custom background
+# - exact flat hex values
 #
-# WITHOUT changing the approved AI Edge pattern engine.
+# The approved generator and vector exporter remain unchanged.
 #
 # ============================================================
 
@@ -19,20 +21,44 @@ import ai_edge_vector as vector
 
 
 # ============================================================
-# DEFAULT APPROVED PALETTE
+# DEFAULT PALETTE
 # ============================================================
 
-DEFAULT_CUSTOM_COLORS = {
-    "Brown": "#4B190F",
-    "Pink": "#F9BFF9",
-    "Red": "#FF0015",
-    "Yellow": "#FFFF8F",
-    "Blue": "#416CA4",
-    "Gray": "#A6B5C2",
-    "Ice Blue": "#CBFEFF",
-}
+DEFAULT_PALETTE = [
+    {
+        "hex": "#4B190F",
+        "weight": 14,
+    },
+    {
+        "hex": "#F9BFF9",
+        "weight": 14,
+    },
+    {
+        "hex": "#FF0015",
+        "weight": 14,
+    },
+    {
+        "hex": "#FFFF8F",
+        "weight": 14,
+    },
+    {
+        "hex": "#416CA4",
+        "weight": 16,
+    },
+    {
+        "hex": "#A6B5C2",
+        "weight": 14,
+    },
+    {
+        "hex": "#CBFEFF",
+        "weight": 14,
+    },
+]
 
 DEFAULT_BACKGROUND = "#EAE7D9"
+
+MIN_COLORS = 1
+MAX_COLORS = 20
 
 
 # ============================================================
@@ -50,6 +76,7 @@ def normalize_hex(
     if not value.startswith(
         "#"
     ):
+
         value = (
             "#"
             +
@@ -70,6 +97,7 @@ def valid_hex(
     if len(
         value
     ) != 7:
+
         return False
 
     try:
@@ -106,6 +134,49 @@ def validated_hex(
 
 
 # ============================================================
+# CONVERT DYNAMIC PALETTE
+# ============================================================
+
+def build_color_system(
+    palette_slots,
+):
+
+    colors = {}
+    weights = {}
+
+
+    for index, slot in enumerate(
+        palette_slots,
+        start=1,
+    ):
+
+        name = (
+            f"Color {index}"
+        )
+
+        colors[
+            name
+        ] = validated_hex(
+            slot["hex"]
+        )
+
+        weights[
+            name
+        ] = max(
+            0.0,
+            float(
+                slot["weight"]
+            ),
+        )
+
+
+    return (
+        colors,
+        weights,
+    )
+
+
+# ============================================================
 # TEMPORARY PALETTE ENVIRONMENT
 # ============================================================
 
@@ -123,9 +194,13 @@ def custom_palette_environment(
         in colors.items()
     }
 
-    clean_background = validated_hex(
-        background
+
+    clean_background = (
+        validated_hex(
+            background
+        )
     )
+
 
     original_generator_colors = (
         generator.COLORS
@@ -139,6 +214,7 @@ def custom_palette_environment(
         vector.BACKGROUND
     )
 
+
     try:
 
         generator.COLORS = dict(
@@ -149,14 +225,12 @@ def custom_palette_environment(
             clean_background
         )
 
-        # The existing Production Vector renderer imports its
-        # background value at module load, so keep it synchronized.
-
         vector.BACKGROUND = (
             clean_background
         )
 
         yield
+
 
     finally:
 
@@ -174,7 +248,7 @@ def custom_palette_environment(
 
 
 # ============================================================
-# PUBLIC BLUEPRINT GENERATOR
+# CREATE BLUEPRINT
 # ============================================================
 
 def create_custom_ai_edge_blueprint(
@@ -182,12 +256,29 @@ def create_custom_ai_edge_blueprint(
     height,
     seed,
     negative_space,
-    colors,
+    palette_slots,
     background,
-    color_weights,
     shape_weights,
     splice_enabled=True,
 ):
+
+    (
+        colors,
+        color_weights,
+    ) = build_color_system(
+        palette_slots
+    )
+
+
+    if sum(
+        color_weights.values()
+    ) <= 0:
+
+        raise ValueError(
+            "At least one artwork color must have "
+            "a balance above zero."
+        )
+
 
     with custom_palette_environment(
         colors=colors,
@@ -206,15 +297,16 @@ def create_custom_ai_edge_blueprint(
             )
         )
 
-        # Preserve the custom background directly in the
-        # completed blueprint so the PNG renderer remains correct
-        # after the temporary environment is restored.
+
+        # Store the custom background directly in the
+        # finished blueprint.
 
         blueprint.background = (
             validated_hex(
                 background
             )
         )
+
 
         return blueprint
 
@@ -233,20 +325,17 @@ def render_custom_png(
 
 
 # ============================================================
-# PRODUCTION VECTOR
+# VECTOR
 # ============================================================
 
 def render_custom_vector(
     blueprint,
 ):
 
-    # The existing vector renderer reads a module-level
-    # BACKGROUND value. Temporarily synchronize it to the
-    # blueprint before rendering.
-
     original_vector_background = (
         vector.BACKGROUND
     )
+
 
     try:
 
@@ -254,11 +343,13 @@ def render_custom_vector(
             blueprint.background
         )
 
+
         return (
             vector.generate_vector_from_blueprint(
                 blueprint
             )
         )
+
 
     finally:
 
