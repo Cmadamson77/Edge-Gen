@@ -3,57 +3,106 @@
 # ai_edge_custom.py
 # ============================================================
 #
+# V3.7
+#
+# UNIVERSAL DYNAMIC PALETTE FIX
+#
 # Supports:
 #
-# - dynamic artwork palette
 # - 1–20 artwork colors
+# - completely arbitrary hex values
+# - completely arbitrary slot names
 # - custom background
-# - exact flat hex values
+# - no dependency on legacy names like:
+#       Brown
+#       Pink
+#       Red
+#       Yellow
+#       Blue
+#       Gray
+#       Ice Blue
 #
-# The approved generator and vector exporter remain unchanged.
+# This file deliberately patches the generator's color-choice
+# function during blueprint creation so legacy palette names
+# can NEVER leak into a dynamic palette.
 #
 # ============================================================
 
+
 from contextlib import contextmanager
+import random
 
 import ai_edge_generator as generator
 import ai_edge_vector as vector
 
 
 # ============================================================
-# DEFAULT PALETTE
+# NEW APPROVED DEFAULT PALETTE
 # ============================================================
 
 DEFAULT_PALETTE = [
     {
-        "hex": "#4B190F",
-        "weight": 14,
+        "hex": "#FF515B",
+        "weight": 10,
     },
     {
-        "hex": "#F9BFF9",
-        "weight": 14,
-    },
-    {
-        "hex": "#FF0015",
-        "weight": 14,
-    },
-    {
-        "hex": "#FFFF8F",
-        "weight": 14,
-    },
-    {
-        "hex": "#416CA4",
+        "hex": "#D6A9E7",
         "weight": 16,
     },
     {
-        "hex": "#A6B5C2",
-        "weight": 14,
+        "hex": "#8C1018",
+        "weight": 8,
     },
     {
-        "hex": "#CBFEFF",
-        "weight": 14,
+        "hex": "#FF6410",
+        "weight": 10,
+    },
+    {
+        "hex": "#F7D3D3",
+        "weight": 10,
+    },
+    {
+        "hex": "#A72AFF",
+        "weight": 8,
+    },
+    {
+        "hex": "#E8C7EF",
+        "weight": 4,
+    },
+    {
+        "hex": "#3D2C63",
+        "weight": 4,
+    },
+    {
+        "hex": "#123FC4",
+        "weight": 10,
+    },
+    {
+        "hex": "#7DA1EB",
+        "weight": 8,
+    },
+    {
+        "hex": "#D7E1F4",
+        "weight": 4,
+    },
+    {
+        "hex": "#7D3E10",
+        "weight": 8,
+    },
+    {
+        "hex": "#FFB56A",
+        "weight": 4,
+    },
+    {
+        "hex": "#FF8136",
+        "weight": 4,
+    },
+    {
+        "hex": "#FF1721",
+        "weight": 10,
     },
 ]
+
 
 DEFAULT_BACKGROUND = "#EAE7D9"
 
@@ -134,7 +183,54 @@ def validated_hex(
 
 
 # ============================================================
-# CONVERT DYNAMIC PALETTE
+# WEIGHTED CHOICE
+# ============================================================
+
+def dynamic_weighted_choice(
+    rng,
+    weights,
+):
+
+    names = list(
+        weights.keys()
+    )
+
+    values = [
+        max(
+            0.0,
+            float(
+                weights[name]
+            ),
+        )
+        for name
+        in names
+    ]
+
+    if not names:
+
+        raise ValueError(
+            "No artwork colors are available."
+        )
+
+    if sum(
+        values
+    ) <= 0:
+
+        values = [
+            1.0
+            for _
+            in names
+        ]
+
+    return rng.choices(
+        names,
+        weights=values,
+        k=1,
+    )[0]
+
+
+# ============================================================
+# BUILD DYNAMIC COLOR SYSTEM
 # ============================================================
 
 def build_color_system(
@@ -150,23 +246,46 @@ def build_color_system(
         start=1,
     ):
 
-        name = (
+        slot_name = (
             f"Color {index}"
         )
 
+
         colors[
-            name
+            slot_name
         ] = validated_hex(
-            slot["hex"]
+            slot[
+                "hex"
+            ]
         )
 
+
         weights[
-            name
+            slot_name
         ] = max(
             0.0,
             float(
-                slot["weight"]
+                slot[
+                    "weight"
+                ]
             ),
+        )
+
+
+    if not colors:
+
+        raise ValueError(
+            "At least one artwork color is required."
+        )
+
+
+    if sum(
+        weights.values()
+    ) <= 0:
+
+        raise ValueError(
+            "At least one artwork color must have "
+            "a balance above zero."
         )
 
 
@@ -177,12 +296,156 @@ def build_color_system(
 
 
 # ============================================================
-# TEMPORARY PALETTE ENVIRONMENT
+# UNIVERSAL COLOR CHOICE
+# ============================================================
+#
+# This completely replaces the old generator behavior:
+#
+#     COLORS["Brown"]
+#     COLORS["Red"]
+#     etc.
+#
+# It uses ONLY the current dynamic palette.
+#
+# ============================================================
+
+def make_dynamic_color_chooser(
+    colors,
+    weights,
+):
+
+    def choose_region_colors(
+        region,
+        ignored_color_weights=None,
+    ):
+
+        rng = random.Random(
+            region.color_seed
+        )
+
+
+        # ----------------------------------------------------
+        # PRIMARY
+        # ----------------------------------------------------
+
+        primary_name = (
+            dynamic_weighted_choice(
+                rng,
+                weights,
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # SECONDARY
+        # ----------------------------------------------------
+
+        secondary_weights = {
+            name: weight
+            for name, weight
+            in weights.items()
+            if (
+                name
+                !=
+                primary_name
+                and
+                weight
+                >
+                0
+            )
+        }
+
+
+        if not secondary_weights:
+
+            secondary_weights = {
+                name: 1.0
+                for name
+                in colors.keys()
+                if name
+                !=
+                primary_name
+            }
+
+
+        if secondary_weights:
+
+            secondary_name = (
+                dynamic_weighted_choice(
+                    rng,
+                    secondary_weights,
+                )
+            )
+
+        else:
+
+            secondary_name = (
+                primary_name
+            )
+
+
+        # ----------------------------------------------------
+        # SPLICE
+        # ----------------------------------------------------
+
+        splice_weights = {
+            name: weight
+            for name, weight
+            in weights.items()
+            if (
+                name
+                !=
+                primary_name
+                and
+                weight
+                >
+                0
+            )
+        }
+
+
+        if splice_weights:
+
+            splice_name = (
+                dynamic_weighted_choice(
+                    rng,
+                    splice_weights,
+                )
+            )
+
+        else:
+
+            splice_name = (
+                secondary_name
+            )
+
+
+        return (
+            colors[
+                primary_name
+            ],
+
+            colors[
+                secondary_name
+            ],
+
+            colors[
+                splice_name
+            ],
+        )
+
+
+    return choose_region_colors
+
+
+# ============================================================
+# TEMPORARY GENERATOR ENVIRONMENT
 # ============================================================
 
 @contextmanager
 def custom_palette_environment(
     colors,
+    color_weights,
     background,
 ):
 
@@ -195,6 +458,20 @@ def custom_palette_environment(
     }
 
 
+    clean_weights = {
+        name: max(
+            0.0,
+            float(
+                color_weights[
+                    name
+                ]
+            ),
+        )
+        for name
+        in clean_colors.keys()
+    }
+
+
     clean_background = (
         validated_hex(
             background
@@ -202,12 +479,24 @@ def custom_palette_environment(
     )
 
 
-    original_generator_colors = (
+    # --------------------------------------------------------
+    # SAVE ALL ORIGINAL GENERATOR STATE
+    # --------------------------------------------------------
+
+    original_colors = (
         generator.COLORS
     )
 
-    original_generator_background = (
+    original_weights = (
+        generator.DEFAULT_COLOR_WEIGHTS
+    )
+
+    original_background = (
         generator.BACKGROUND
+    )
+
+    original_choose_region_colors = (
+        generator.choose_region_colors
     )
 
     original_vector_background = (
@@ -217,30 +506,76 @@ def custom_palette_environment(
 
     try:
 
+        # ----------------------------------------------------
+        # INSTALL DYNAMIC PALETTE
+        # ----------------------------------------------------
+
         generator.COLORS = dict(
             clean_colors
         )
+
+
+        generator.DEFAULT_COLOR_WEIGHTS = dict(
+            clean_weights
+        )
+
 
         generator.BACKGROUND = (
             clean_background
         )
 
+
+        # ----------------------------------------------------
+        # CRITICAL UNIVERSAL FIX
+        # ----------------------------------------------------
+        #
+        # No matter what the old generator thinks the colors
+        # are called, all region color selection now goes
+        # through this palette-aware chooser.
+        #
+        # ----------------------------------------------------
+
+        generator.choose_region_colors = (
+            make_dynamic_color_chooser(
+                clean_colors,
+                clean_weights,
+            )
+        )
+
+
         vector.BACKGROUND = (
             clean_background
         )
+
 
         yield
 
 
     finally:
 
+        # ----------------------------------------------------
+        # RESTORE ORIGINAL GENERATOR
+        # ----------------------------------------------------
+
         generator.COLORS = (
-            original_generator_colors
+            original_colors
         )
 
-        generator.BACKGROUND = (
-            original_generator_background
+
+        generator.DEFAULT_COLOR_WEIGHTS = (
+            original_weights
         )
+
+
+        generator.BACKGROUND = (
+            original_background
+        )
+
+
+        generator.choose_region_colors = (
+            original_choose_region_colors
+        )
+
 
         vector.BACKGROUND = (
             original_vector_background
@@ -270,18 +605,9 @@ def create_custom_ai_edge_blueprint(
     )
 
 
-    if sum(
-        color_weights.values()
-    ) <= 0:
-
-        raise ValueError(
-            "At least one artwork color must have "
-            "a balance above zero."
-        )
-
-
     with custom_palette_environment(
         colors=colors,
+        color_weights=color_weights,
         background=background,
     ):
 
@@ -297,9 +623,6 @@ def create_custom_ai_edge_blueprint(
             )
         )
 
-
-        # Store the custom background directly in the
-        # finished blueprint.
 
         blueprint.background = (
             validated_hex(
@@ -325,7 +648,7 @@ def render_custom_png(
 
 
 # ============================================================
-# VECTOR
+# PRODUCTION VECTOR
 # ============================================================
 
 def render_custom_vector(
